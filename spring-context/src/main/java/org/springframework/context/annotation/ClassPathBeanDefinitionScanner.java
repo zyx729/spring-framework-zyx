@@ -277,6 +277,24 @@ public class ClassPathBeanDefinitionScanner extends ClassPathScanningCandidateCo
 			 * 并把它转成beanDefinition 类型
 			 */
 			Set<BeanDefinition> candidates = findCandidateComponents(basePackage);
+			/**
+			 * 这个循环的流程比较复杂需要单独说明一下
+			 * 首先在上一步中通过findCandidateComponents()#scanCandidateComponents() 方法
+			 * 利用asm 方式将文件都扫描出来，并在内部将通过isCandidateComponent() 方法将所有的includeFilters 的对象都转换成了ScannedGenericBeanDefinition 对象
+			 * 而ScannedGenericBeanDefinition 是extends GenericBeanDefinition 的，而GenericBeanDefinition 又是继承自 AbstractBeanDefinition
+			 * 简而言之，通过扫描之后，将对象已经转换成了beanDefinition
+			 * 所以在循环中，第一个if 判断是肯定都会进入的
+			 * 第一个判断进入之后，通过postProcessBeanDefinition()#beanDefinition.applyDefaults() 的操作为每个beanDefinition 增加上全局配置的默认值
+			 * 比如lazy，init，destroy 等属性的默认值
+			 * 第二个if 会去判断当前beanDefinition 是否是一个加了注解的类，如果加了注解，那么就需要去解析当前beanDefinition 的具体的注解内容
+			 * 因为虽然全局配置config 上我们可能配置了一个属性为false，但是我们也有可能针对特定的类，在其上通过单独的注解为其配置独立的属性为true。
+			 *
+			 * 这里也要单独说一下，在调用本方法也就是doScan() 之前的流程中，Spring 会去读取我们的config 类的配置信息，为一个类似全局的配置进行设值
+			 * 但是也要防止开发人员针对性的单独为某一个或几个类通过注解的方式去独立的设置它的属性值
+			 *
+			 * 所以简单来说这里的循环的作用就是为加了注解的类去解析他们独立的注解属性值并赋值给他们，为没有独立属性的对象赋上全局默认的值
+			 *
+			 */
 			for (BeanDefinition candidate : candidates) {
 				/**
 				 * 解析scope 属性
@@ -304,6 +322,9 @@ public class ClassPathBeanDefinitionScanner extends ClassPathScanningCandidateCo
 					definitionHolder =
 							AnnotationConfigUtils.applyScopedProxyMode(scopeMetadata, definitionHolder, this.registry);
 					beanDefinitions.add(definitionHolder);
+					/**
+					 * 加入到map 中去
+					 */
 					registerBeanDefinition(definitionHolder, this.registry);
 				}
 			}

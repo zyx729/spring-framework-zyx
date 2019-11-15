@@ -251,6 +251,10 @@ public class ConfigurationClassPostProcessor implements BeanDefinitionRegistryPo
 			processConfigBeanDefinitions((BeanDefinitionRegistry) beanFactory);
 		}
 
+		/**
+		 * 给配置类也就是加了@Configuration 的类产生cglib 代理
+		 * 为什么需要产生cglib 代理？
+		 */
 		enhanceConfigurationClasses(beanFactory);
 		beanFactory.addBeanPostProcessor(new ImportAwareBeanPostProcessor(beanFactory));
 	}
@@ -359,12 +363,17 @@ public class ConfigurationClassPostProcessor implements BeanDefinitionRegistryPo
 
 		/**
 		 * 实例化2个set
-		 * candidates 用于将之前加入的configCandidates 进行去重，因为可能有多个配置类重复了
+		 * candidates 用于将之前加入的configCandidates 进行去重，因为我们自己的编写的有可能会对Spring 内部的产生干扰，使多个配置类重复
 		 * alreadyParsed 用于判断是否处理过
 		 */
 		Set<BeanDefinitionHolder> candidates = new LinkedHashSet<>(configCandidates);
 		Set<ConfigurationClass> alreadyParsed = new HashSet<>(configCandidates.size());
 		do {
+			/**
+			 * 处理@Component 注解和@Import 注解
+			 * 将@Component 注解的类升级到beanDefinition 并直接加到容器中去，将@Import 注解的类根据传入的实现方式不同放到不同的集合中
+			 * 并在下面的流程中进行处理
+			 */
 			parser.parse(candidates);
 			parser.validate();
 
@@ -378,7 +387,7 @@ public class ConfigurationClassPostProcessor implements BeanDefinitionRegistryPo
 						this.importBeanNameGenerator, parser.getImportRegistry());
 			}
 			/**
-			 * 把扫描出来的bean 对应的beanDefinitions 添加到factory 的map 当中
+			 * 将前面处理@Import 注解得到的集合升级成beanDefinition 对象，并加到容器中去
 			 */
 			this.reader.loadBeanDefinitions(configClasses);
 			alreadyParsed.addAll(configClasses);
@@ -427,6 +436,10 @@ public class ConfigurationClassPostProcessor implements BeanDefinitionRegistryPo
 		Map<String, AbstractBeanDefinition> configBeanDefs = new LinkedHashMap<>();
 		for (String beanName : beanFactory.getBeanDefinitionNames()) {
 			BeanDefinition beanDef = beanFactory.getBeanDefinition(beanName);
+			/**
+			 * 判断是否是一个全注解类
+			 *
+			 */
 			if (ConfigurationClassUtils.isFullConfigurationClass(beanDef)) {
 				if (!(beanDef instanceof AbstractBeanDefinition)) {
 					throw new BeanDefinitionStoreException("Cannot enhance @Configuration bean definition '" +
@@ -446,6 +459,21 @@ public class ConfigurationClassPostProcessor implements BeanDefinitionRegistryPo
 			return;
 		}
 
+		/**
+		 * 当configuration 被代理之后会呈现如下的代理类：
+		 * @Configuration
+		 * @ComponentSca("xxxx")
+		 * public class xxxx extends MyConfig implements EnhancedConfiguration{
+		 *     private BeanFactory $$beanFactory
+		 *
+		 *
+		 *    @bean
+		 *    public ... A(){}
+		 *
+		 *    @bean
+		 * 	  public ... b(){}
+		 * }
+		 */
 		ConfigurationClassEnhancer enhancer = new ConfigurationClassEnhancer();
 		for (Map.Entry<String, AbstractBeanDefinition> entry : configBeanDefs.entrySet()) {
 			AbstractBeanDefinition beanDef = entry.getValue();

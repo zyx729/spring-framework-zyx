@@ -12,8 +12,8 @@ public class SpringTest {
 		annotationConfigApplicationContext.addBeanFactoryPostProcessor(new TestBeanFactoryPostProcessor());
 		annotationConfigApplicationContext.refresh();
 
-		EntityBean entityBean = (EntityBean) annotationConfigApplicationContext.getBean("entityBean");
-		EntityBean entityBean1 = (EntityBean) annotationConfigApplicationContext.getBean("entityBean");
-		System.out.println(entityBean.hashCode() + " ========= " + entityBean1.hashCode());
+//		EntityBean entityBean = (EntityBean) annotationConfigApplicationContext.getBean("entityBean");
+//		EntityBean entityBean1 = (EntityBean) annotationConfigApplicationContext.getBean("entityBean");
+//		System.out.println(entityBean.hashCode() + " ========= " + entityBean1.hashCode());
 	}
 }

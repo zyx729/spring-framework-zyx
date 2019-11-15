@@ -126,6 +126,9 @@ class ConfigurationClassBeanDefinitionReader {
 	private void loadBeanDefinitionsForConfigurationClass(
 			ConfigurationClass configClass, TrackedConditionEvaluator trackedConditionEvaluator) {
 
+		/**
+		 * 已经完成注入的就进行跳过，因为会将@Component 的对象也带入过来
+		 */
 		if (trackedConditionEvaluator.shouldSkip(configClass)) {
 			String beanName = configClass.getBeanName();
 			if (StringUtils.hasLength(beanName) && this.registry.containsBeanDefinition(beanName)) {
@@ -135,6 +138,10 @@ class ConfigurationClassBeanDefinitionReader {
 			return;
 		}
 
+		/**
+		 * 如果一个类是被import 引入的，同时也不是实现importBeanDefinitionRegistrar 接口的对象
+		 * 就将在这里被注入到Spring 容器中去
+		 */
 		if (configClass.isImported()) {
 			registerBeanDefinitionForImportedConfigurationClass(configClass);
 		}
@@ -142,7 +149,13 @@ class ConfigurationClassBeanDefinitionReader {
 			loadBeanDefinitionsForBeanMethod(beanMethod);
 		}
 
+		/**
+		 * @Import 的时候有可能引入xml，就在这里处理
+		 */
 		loadBeanDefinitionsFromImportedResources(configClass.getImportedResources());
+		/**
+		 * 处理@Import 的传入对象是实现了importBeanDefinitionRegistrar 接口的对象
+		 */
 		loadBeanDefinitionsFromRegistrars(configClass.getImportBeanDefinitionRegistrars());
 	}
 

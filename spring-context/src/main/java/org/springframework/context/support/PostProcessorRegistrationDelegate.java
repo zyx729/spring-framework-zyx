@@ -121,12 +121,19 @@ final class PostProcessorRegistrationDelegate {
 			 */
 			registryProcessors.addAll(currentRegistryProcessors);
 
+			/**
+			 * 执行所有beanDefinitionRegistryPostProcessor
+			 * 内部流程相当复杂且长，要多回顾
+			 */
 			invokeBeanDefinitionRegistryPostProcessors(currentRegistryProcessors, registry);
 			/**
 			 * 这个currentRegistryProcessors 是一个临时的变量，所以要清除
 			 */
 			currentRegistryProcessors.clear();
 
+			/**
+			 * 执行排序
+			 */
 			// Next, invoke the BeanDefinitionRegistryPostProcessors that implement Ordered.
 			postProcessorNames = beanFactory.getBeanNamesForType(BeanDefinitionRegistryPostProcessor.class, true, false);
 			for (String ppName : postProcessorNames) {
@@ -140,6 +147,10 @@ final class PostProcessorRegistrationDelegate {
 			invokeBeanDefinitionRegistryPostProcessors(currentRegistryProcessors, registry);
 			currentRegistryProcessors.clear();
 
+			/**
+			 * 执行剩余的，个人猜测，前面其实已经将所有的postProcessor 已经处理完了
+			 * 为什么这里还要再处理一次，感觉上这块代码应该是不会被执行到了，也许是考虑到处理上面的postProcessor 中有新增的遗留下来了在这里进行处理
+			 */
 			// Finally, invoke all other BeanDefinitionRegistryPostProcessors until no further ones appear.
 			boolean reiterate = true;
 			while (reiterate) {
@@ -158,6 +169,20 @@ final class PostProcessorRegistrationDelegate {
 				currentRegistryProcessors.clear();
 			}
 
+			/**
+			 * 执行beanFactoryPostProcessor 的回调，那么前面执行的是什么？
+			 * 前面执行的是beanFactoryPostProcessor 的子类beanDefinitionRegistryPostProcessor 的回调
+			 * 子类在前面花了大量的篇幅进行处理之后
+			 * 父类接口不能忘记，因为我们可以直接实现父类，就在这里进行处理
+			 *
+			 * 前面我们可以看到registryProcessors 和regularPostProcessors 分别是子类和父类的集合
+			 * 为什么这里还要再执行一次子类的回调
+			 * 因为前面在处理子类的回调的时候是没有处理从父类继承过来的回调的，所以在这里将子类中的父类的回调进行处理
+			 * 然后处理直接实现父类的那些类的回调方法
+			 * 也就是处理beanFactoryPostProcessor 中的postProcessBeanFactory() 方法
+			 * postProcessBeanFactory() 这个方法很重要，里面涉及到了Full 和lite 的部分，从而涉及到了cglib 代理的部分
+			 *
+			 */
 			// Now, invoke the postProcessBeanFactory callback of all processors handled so far.
 			invokeBeanFactoryPostProcessors(registryProcessors, beanFactory);
 			invokeBeanFactoryPostProcessors(regularPostProcessors, beanFactory);

@@ -170,6 +170,11 @@ class ConfigurationClassParser {
 			BeanDefinition bd = holder.getBeanDefinition();
 			try {
 				if (bd instanceof AnnotatedBeanDefinition) {
+					/**
+					 * 解析注解对象，并且把解析出来的beanDefinition 放到map，但是这里的beanDefinition指的是普通的类
+					 * 什么叫不普通呢？比如@Bean 和各种beanFactoryPostProcessor 得到的bean
+					 * 但是这里只是解析，不put 而已
+					 */
 					parse(((AnnotatedBeanDefinition) bd).getMetadata(), holder.getBeanName());
 				}
 				else if (bd instanceof AbstractBeanDefinition && ((AbstractBeanDefinition) bd).hasBeanClass()) {
@@ -234,6 +239,7 @@ class ConfigurationClassParser {
 		if (existingClass != null) {
 			/**
 			 * 处理import 的情况
+			 * 就是当前这个注解类有没有被别的类import
 			 */
 			if (configClass.isImported()) {
 				if (existingClass.isImported()) {
@@ -257,6 +263,9 @@ class ConfigurationClassParser {
 		}
 		while (sourceClass != null);
 
+		/**
+		 * 一个map，用来存放扫描出来的bean(注意这里的bean 不是对象，仅仅是bean 的信息，因为还没到初始化的时候)
+		 */
 		this.configurationClasses.put(configClass, configClass);
 	}
 
@@ -299,7 +308,7 @@ class ConfigurationClassParser {
 			for (AnnotationAttributes componentScan : componentScans) {
 				// The config class is annotated with @ComponentScan -> perform the scan immediately
 				/**
-				 * 通过parse 方法继续解析
+				 * 扫描普通类 也就是加了@Component 的类
 				 */
 				Set<BeanDefinitionHolder> scannedBeanDefinitions =
 						this.componentScanParser.parse(componentScan, sourceClass.getMetadata().getClassName());
@@ -318,10 +327,15 @@ class ConfigurationClassParser {
 				}
 			}
 		}
-
-		// Process any @Import annotations
 		/**
-		 * 处理@Import，这里要重点说一下
+		 * ============================================================
+		 * 上面的代码就是扫描普通类---加了@Component 注解的类，并且放到了map 当中
+		 * ============================================================
+		 */
+
+
+		/**
+		 * 此处代码是处理@Import 注解，在了解processImports() 方法之前，我们从以下几个点的内容对@Import 注解进行一些重点说明：
 		 * 常规来说，我们将一个对象交给Spring 容器变成beanDefinition 有以下几种方式：
 		 * 1. register(xxx.class)
 		 * 2. scan注解 + 被扫描的类上标注解@Componet、@Service 等
@@ -329,10 +343,20 @@ class ConfigurationClassParser {
 		 * 上述三种方式都有一个小问题，我们无法干预Spring 将对象转换成beanDefinition 的过程
 		 * 但是，如果我们传入Import 注解的参数换一个就可以做到
 		 * 如何实现呢？
+		 *
 		 * 从@Import 注解的源码中我们可以知道，Import 注解可以接收如下几种入参：
 		 * Configuration、ImportSelector、ImportBeanDefinitionRegistrar
-		 * 其中，ImportBeanDefinitionRegistrar 这个接口的方法registerBeanDefinitions() 就可以让我们手动的往beanDefinition 容器中添加bean
-		 * 因为它有一个入参BeanDefinitionRegistry 对象。
+		 *
+		 * 一、ImportSelector：上面说了该入参通过返回的数组将需要引入到Spring 容器的对象进行返回，通过该注解我们做以下两种工作
+		 * 1.可以动态的去开启某些功能(AOP 中用到)
+		 * 2.批量引入配置(这个主要在SpringBoot 中去配置化的时候用到)
+		 * 能做到上述两种工作的原因就是是因为我们可以通过该接口方法selectImports() 的参数AnnotationMetadata 去获取加了@Import 的类的其余注解内容。
+		 * 通过获取到的其余注解的值的不同，我们可以对加了该注解的类的功能进行动态的进行处理，比如根据其它注解的值在ImportSelector 实现类中来处理AOP 相关的功能实现
+		 * 或者根据其他注解的值的不同来动态引入不同的一个或多个配置类或配置文件
+		 *
+		 *
+		 * 二、ImportBeanDefinitionRegistrar 这个接口的方法registerBeanDefinitions() 可以让我们手动的往beanDefinition 容器中添加bean
+		 * 因为它有一个入参BeanDefinitionRegistry 对象。通过这个对象就可以解决我们上面的问题，如何干预Spring 将对象转换成beanDefinition 的过程。
 		 * 为什么需要这样的功能呢？
 		 * 主要的出发点就是一个灵活可控性。
 		 * 我们都知道在MyBatis 中，我们只需要在dao 接口内的方法上用注解将SQL 语句编写好，然后通过@MapperScan 注解就能让我们在service 层直接
@@ -423,6 +447,17 @@ class ConfigurationClassParser {
 		 *	在MyBatis 中MapperFactoryBean 就是类似于我们上面的MyFactoryBean，它里面有个属性叫mapperInterface，相当于我们MyFactoryBean 里面的clazz
 		 * 	所以上述配置就是在配置这个映射关系而已。
 		 */
+
+		/**
+		 * 回到processImports() 方法本身，这里主要是判断我们的类当中是否有@Import 注解，通过getImports(sourceClass) 来判断
+		 * 如果有，就将@Import 当中的值拿出来，是一个类
+		 * 比如@Import(xxx.class)，那么这里就是将xxx 传进入进行解析
+		 * 在解析的过程中如果发现是一个importSelector 就会调用importSelector 的方法
+		 * 返回一个字符串(类名)，通过这个字符串得到一个类
+		 * 继而在递归调用本方法来处理这个类
+		 *
+		 */
+		// Process any @Import annotations
 		processImports(configClass, sourceClass, getImports(sourceClass), true);
 
 		// Process any @ImportResource annotations
@@ -725,9 +760,15 @@ class ConfigurationClassParser {
 			this.importStack.push(configClass);
 			try {
 				for (SourceClass candidate : importCandidates) {
+					/**
+					 * 判断@Import 注解引入的对象是不是一个ImportSelector 的接口实现类
+					 */
 					if (candidate.isAssignable(ImportSelector.class)) {
 						// Candidate class is an ImportSelector -> delegate to it to determine imports
 						Class<?> candidateClass = candidate.loadClass();
+						/**
+						 * 反射实现一个对象
+						 */
 						ImportSelector selector = BeanUtils.instantiateClass(candidateClass, ImportSelector.class);
 						ParserStrategyUtils.invokeAwareMethods(
 								selector, this.environment, this.resourceLoader, this.registry);
@@ -736,12 +777,40 @@ class ConfigurationClassParser {
 									new DeferredImportSelectorHolder(configClass, (DeferredImportSelector) selector));
 						}
 						else {
+							/**
+							 * 为了解决实现了ImportSelector 接口的实现中也引入了@Import 注解，这里采用了递归调用
+							 * 换句话说，Spring 在处理@Import 注解中的类也是加了@Import 注解的时候，其实并没有真正的进行实际功能的处理
+							 * 而是将其继续递归，直到没有引用@Import 为止，也就是说Spring 在对待@Import 了实现了ImportSelector 接口的类时
+							 * 只是将其当成了一个普通类在处理，最终处理这样的类的位置其实就是在最后的那个else 中，与对待@Import 了一个普通类是一样的意思
+							 * 比如：
+							 * @Import(B.class)
+							 * class A {}
+							 *
+							 * @Import(C.class)
+							 * class B implements ImportSelector{}
+							 *
+							 * class C implements ImportSelector{}
+							 * 和
+							 * @Import(B.class)
+							 * class A {}
+							 *
+							 * class B implements ImportSelector{}
+							 *
+							 * 这两种处理的情况是一样的，只不过因为多层引用@Import 的原因，在这里递归解析了一下，最终落脚的处理位置还是最后的else 逻辑中
+							 */
 							String[] importClassNames = selector.selectImports(currentSourceClass.getMetadata());
 							Collection<SourceClass> importSourceClasses = asSourceClasses(importClassNames);
 							processImports(configClass, currentSourceClass, importSourceClasses, false);
 						}
 					}
 					else if (candidate.isAssignable(ImportBeanDefinitionRegistrar.class)) {
+						/**
+						 * 如果@Import 中引入的是一个实现了ImportBeanDefinitionRegistrar 的类
+						 * 就将该对象先放入importBeanDefinitionRegistrars 中
+						 * 然后在ConfigurationClassPostProcessor#processConfigBeanDefinitions() 的this.reader.loadBeanDefinitions(configClasses);代码中
+						 * 会调用 ConfigurationClassBeanDefinitionReader#loadBeanDefinitionsForConfigurationClass() 方法
+						 * 在该方法中会调用ConfigurationClassBeanDefinitionReader#loadBeanDefinitionsFromRegistrars() 将该对象直接进行注册
+						 */
 						// Candidate class is an ImportBeanDefinitionRegistrar ->
 						// delegate to it to register additional bean definitions
 						Class<?> candidateClass = candidate.loadClass();
@@ -752,10 +821,20 @@ class ConfigurationClassParser {
 						configClass.addImportBeanDefinitionRegistrar(registrar, currentSourceClass.getMetadata());
 					}
 					else {
+						/**
+						 * 如果加了@Import 注解的类所返回的字符串数组的对象上没有继续追加@Import 注解了的话，就会进入到这里
+						 * 因为这个时候该类就是一个普通类了
+						 * 在这里将该对象加入到importStack 后调用processConfigurationClass() 进行处理
+						 * processConfigurationClass() 里主要就是把类放到configurationClasses
+						 * configurationClasses 是一个集合，会在后面拿出来解析成beanDefinition 继而进行注册
+						 * 可以看到在外面的流程中，普通类被扫描出来的时候就被注册了
+						 * 而import 的类，会先放到configurationClasses 后，再来进行注册
+						 */
 						// Candidate class not an ImportSelector or ImportBeanDefinitionRegistrar ->
 						// process it as an @Configuration class
 						this.importStack.registerImport(
 								currentSourceClass.getMetadata(), candidate.getMetadata().getClassName());
+
 						processConfigurationClass(candidate.asConfigClass(configClass));
 					}
 				}
